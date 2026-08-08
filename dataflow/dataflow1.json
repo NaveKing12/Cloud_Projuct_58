@@ -1,0 +1,118 @@
+{
+	"name": "dataflow1",
+	"properties": {
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"dataset": {
+						"referenceName": "DS_ADLSgen2_Source",
+						"type": "DatasetReference"
+					},
+					"name": "source1"
+				}
+			],
+			"sinks": [
+				{
+					"dataset": {
+						"referenceName": "DS_ADLSgen2_Reject",
+						"type": "DatasetReference"
+					},
+					"name": "sink1"
+				},
+				{
+					"dataset": {
+						"referenceName": "DS_ADLSgen2_Working",
+						"type": "DatasetReference"
+					},
+					"name": "sink2"
+				}
+			],
+			"transformations": [
+				{
+					"name": "derivedColumn1"
+				},
+				{
+					"name": "window1"
+				},
+				{
+					"name": "derivedColumn2"
+				},
+				{
+					"name": "rejected"
+				},
+				{
+					"name": "derivedColumn3"
+				},
+				{
+					"name": "select1"
+				},
+				{
+					"name": "select2"
+				}
+			],
+			"scriptLines": [
+				"source(output(",
+				"          Credit_ID as string,",
+				"          Card_Type as string,",
+				"          Credit_Name as string,",
+				"          Credit_Score as string,",
+				"          Credit_Purchasedate as string",
+				"     ),",
+				"     allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     ignoreNoFilesFound: false) ~> source1",
+				"source1 derive(DateAction = iif(isDate(Credit_Purchasedate,'yyy-mm-dd'),'W','R')) ~> derivedColumn1",
+				"derivedColumn1 window(over(Credit_ID,",
+				"          Card_Type,",
+				"          Credit_Name,",
+				"          Credit_Score,",
+				"          Credit_Purchasedate),",
+				"     asc(Credit_ID, true),",
+				"     row_number = rowNumber()) ~> window1",
+				"window1 derive(DuplicatAction = iif(row_number>1,'R','W'),",
+				"          NullAction = iif(isNull(Credit_ID),'R','W')) ~> derivedColumn2",
+				"derivedColumn2 split(DateAction=='R'||DuplicatAction=='R'|| NullAction=='R',",
+				"     disjoint: false) ~> rejected@(Rejected, Working)",
+				"rejected@Rejected derive(RejectedReason = iif(DateAction=='R','Date formate is incorrect',iif(DuplicatAction=='R','Row level Duplicate records',iif(NullAction=='R','Null Records at Credit_Id','NA')))) ~> derivedColumn3",
+				"derivedColumn3 select(mapColumn(",
+				"          Credit_ID,",
+				"          Card_Type,",
+				"          Credit_Name,",
+				"          Credit_Score,",
+				"          Credit_Purchasedate,",
+				"          RejectedReason",
+				"     ),",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> select1",
+				"rejected@Working select(mapColumn(",
+				"          Credit_ID,",
+				"          Card_Type,",
+				"          Credit_Name,",
+				"          Credit_Score,",
+				"          Credit_Purchasedate",
+				"     ),",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> select2",
+				"select1 sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     partitionFileNames:['reject.csv'],",
+				"     umask: 0022,",
+				"     preCommands: [],",
+				"     postCommands: [],",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true,",
+				"     partitionBy('hash', 1)) ~> sink1",
+				"select2 sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     partitionFileNames:['cust.csv'],",
+				"     umask: 0022,",
+				"     preCommands: [],",
+				"     postCommands: [],",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true,",
+				"     partitionBy('hash', 1)) ~> sink2"
+			]
+		}
+	}
+}
